@@ -1,0 +1,156 @@
+#include <Robojax_L298N_DC_motor.h>
+#include <BluetoothSerial.h>
+#include <TinyGPSPlus.h>
+
+int trigPin1 = 23;
+int echoPin1 = 22;
+int trigPin2 = 13;
+int echoPin2 = 12;
+int trigPin3 = 14;
+int echoPin3 = 27;
+int duration1;
+int distance1;
+int duration2;
+int distance2;
+int duration3;
+int distance3;
+
+BluetoothSerial SerialBT;
+TinyGPSPlus gps;
+
+#define IR_SENSOR_PIN_1 4
+#define IR_SENSOR_PIN_2 15
+
+#define CHA 0
+#define ENA 19
+#define IN1 18
+#define IN2 5
+const int CCW = 2;
+const int CW = 1;
+#define motor1 1
+
+Robojax_L298N_DC_motor robot(IN1, IN2, ENA, CHA);
+
+bool motorStopped = false;
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32test");
+  Serial.println("The device started, now you can pair it with Bluetooth!");
+
+  pinMode(IR_SENSOR_PIN_1, INPUT);
+  pinMode(IR_SENSOR_PIN_2, INPUT);
+
+  pinMode(trigPin1, OUTPUT);
+  pinMode(echoPin1, INPUT);
+  pinMode(trigPin2, OUTPUT);
+  pinMode(echoPin2, INPUT);
+  pinMode(trigPin3, OUTPUT);
+  pinMode(echoPin3, INPUT);
+
+  robot.begin();
+  Serial2.begin(115200);
+  delay(3000);
+}
+
+void loop() {
+  // Infrared sensor readings
+  int irSensor1 = digitalRead(IR_SENSOR_PIN_1);
+  int irSensor2 = digitalRead(IR_SENSOR_PIN_2);
+
+  // Ultrasonic sensor readings
+  digitalWrite(trigPin1, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin1, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin1, LOW);
+  duration1 = pulseIn(echoPin1, HIGH);
+  distance1 = duration1 * 0.034 / 2;
+  int a = distance1;
+  digitalWrite(trigPin2, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin2, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin2, LOW);
+  duration2 = pulseIn(echoPin2, HIGH);
+  distance2 = duration2 * 0.034 / 2;
+  int b = distance2;
+  digitalWrite(trigPin3, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin3, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin3, LOW);
+  duration3 = pulseIn(echoPin3, HIGH);
+  distance3 = duration3 * 0.034 / 2;
+  int c = distance3;
+
+  // GPS data parsing and display
+  while (Serial2.available() > 0) {
+    if (gps.encode(Serial2.read())) {
+      displayInfo();
+    }
+  }
+
+  // Print sensor readings for debugging
+  Serial.print("IR Sensor 1: ");
+  Serial.println(irSensor1);
+  Serial.print("IR Sensor 2: ");
+  Serial.println(irSensor2);
+  Serial.print("Ultrasonic Sensor 1 Distance: ");
+  Serial.print(distance1);
+  Serial.println(" cm");
+  Serial.print("Ultrasonic Sensor 2 Distance: ");
+  Serial.print(distance2);
+  Serial.println(" cm");
+  Serial.print("Ultrasonic Sensor 3 Distance: ");
+  Serial.print(distance3);
+  Serial.println(" cm");
+
+  // Motor control based on sensor readings
+  if (irSensor1 == HIGH || irSensor2 == HIGH || a > 5 || b > 7 || c > 5) {
+    robot.rotate(motor1, 0, CW); // Stop motor if any obstacle detected
+    motorStopped = true;
+    if (b > 7) {
+      SerialBT.println("Bot has been theft");
+    } else {
+      SerialBT.println("Crack or Misalignment detected");
+    }
+    if (gps.location.isValid()) {
+      SerialBT.print("Lat:");
+      SerialBT.print(gps.location.lat(), 6);
+      SerialBT.print("Lng:");
+      SerialBT.println(gps.location.lng(), 6);
+    }
+  } else if (!motorStopped) {
+    robot.rotate(motor1, 70, CW); // Move motor if no obstacle detected and motor is not stopped
+  }
+
+  // Bluetooth communication
+  while (Serial.available()) {
+    SerialBT.write(Serial.read());
+  }
+  while (SerialBT.available()) {
+    Serial.write(SerialBT.read());
+  }
+
+  // GPS error handling
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
+    Serial.println("No GPS detected: check wiring.");
+    while (true);
+  }
+
+  delay(200);
+}
+
+void displayInfo() {
+  SerialBT.print("Location: ");
+  if (gps.location.isValid()) {
+    SerialBT.print("Lat: ");
+    SerialBT.print(gps.location.lat(), 6);
+    SerialBT.print(", Lng: ");
+    SerialBT.print(gps.location.lng(), 6);
+    SerialBT.println();
+  } else {
+    SerialBT.println("INVALID");
+  }
+}
